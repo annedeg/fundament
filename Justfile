@@ -176,6 +176,35 @@ dev-debug:
 deploy env:
     skaffold run --profile env-{{ env }}
 
+# Deploy the platform from CI's published master images, without local builds or dev servers: enough for plugin development
+platform-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # CI tags every master build <sha>-master-<run>, but a failed or running build pushes only
+    # some images. Take the newest commit of this checkout whose images all exist, so they
+    # match this chart and its database migrations.
+    repos=$(yq '.images[] | sub(":latest$"; "") | sub("^ghcr.io/"; "")' charts/fundament/values.yaml)
+    token=$(curl -fsS "https://ghcr.io/token?$(printf 'scope=repository:%s:pull&' $repos)" | jq -r .token)
+    path="/v2/fundament-oss/fundament/db-migrations/tags/list?n=1000" tags=""
+    while [ -n "$path" ]; do
+        response=$(curl -fsS -i -H "Authorization: Bearer $token" "https://ghcr.io$path")
+        tags+=$(sed -n '/^{/p' <<<"$response" | jq -r '.tags[]')$'\n'
+        path=$(sed -nE 's/^link: <([^>]+)>.*/\1/Ip' <<<"$response")
+    done
+    complete() { for repo in $repos; do curl -fsSI -o /dev/null -H "Authorization: Bearer $token" \
+        -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+        "https://ghcr.io/v2/$repo/manifests/$1" 2>/dev/null || return 1; done; }
+    tag=""
+    for sha in $(git rev-list --first-parent -n 100 HEAD); do
+        for candidate in $(grep "^$sha-master-" <<<"$tags" | sort -t- -k3 -n -r); do
+            complete "$candidate" && { tag=$candidate; break 2; }
+        done
+    done
+    [ -n "$tag" ] || { echo "No complete CI build among the last 100 commits of this checkout; pull master."; exit 1; }
+    echo "Images: $tag"
+    helm upgrade --install fundament charts/fundament -n fundament --kube-context k3d-fundament -f charts/fundament/values-local.yaml \
+        $(tag=$tag yq '.images | to_entries | .[] | "--set=images." + .key + "=" + (.value | sub(":latest$"; ":" + strenv(tag)))' charts/fundament/values.yaml) --wait --timeout 10m
+
 # --- Docs commands ---
 
 # Run the docs dev server; edits under docs/ show up while it runs

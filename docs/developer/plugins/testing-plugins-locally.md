@@ -21,6 +21,7 @@ Run a plugin against the local platform: the platform stores its definition, a s
 ```
 
 - Requires the platform from [Getting started](../fundament/getting-started.md). Run the `just` commands from the fundament repository root.
+- Not changing the platform itself? `just platform-up` instead of `just dev-hotreload` runs it from CI's published master images: no local builds or dev servers, a fraction of the memory.
 - [Example: cert-manager](#example-cert-manager) runs every step for one plugin.
 - Plugin-specific steps (extra images, `spec.config`, test recipes) are in each plugin's `plugins/<path>/README.md`.
 
