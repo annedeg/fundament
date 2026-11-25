@@ -33,6 +33,10 @@ db:
   instances: 1
   storageSize: 1Gi
   exposePort: 54328
+  # Without a limit the kernel keeps the database's page cache until the whole machine runs short.
+  resources:
+    limits:
+      memory: 512Mi
   postgresql:
     parameters:
       log_statement: "all"
